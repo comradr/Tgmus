@@ -11,6 +11,8 @@ import app.tgmus.core.telegram.AuthState
 import app.tgmus.core.telegram.TelegramClient
 import app.tgmus.core.telegram.toUserMessage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,8 @@ data class AuthUiState(
     val step: AuthState = AuthState.Loading,
     val isSubmitting: Boolean = false,
     val error: String? = null,
+    /** Растёт после каждой повторной отправки кода, чтобы таймер на экране запускался заново. */
+    val resendCount: Int = 0,
 )
 
 class AuthViewModel(private val telegram: TelegramClient) : ViewModel() {
@@ -32,6 +36,7 @@ class AuthViewModel(private val telegram: TelegramClient) : ViewModel() {
         val error: String? = null,
         /** Пользователь вернулся с экрана кода, чтобы исправить номер. */
         val editingPhone: Boolean = false,
+        val resendCount: Int = 0,
     )
 
     private val local = MutableStateFlow(Local())
@@ -45,6 +50,7 @@ class AuthViewModel(private val telegram: TelegramClient) : ViewModel() {
             step = if (local.editingPhone && canEditPhone) AuthState.WaitPhone else auth,
             isSubmitting = local.isSubmitting,
             error = local.error,
+            resendCount = local.resendCount,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AuthUiState())
 
@@ -72,21 +78,24 @@ class AuthViewModel(private val telegram: TelegramClient) : ViewModel() {
         submit { telegram.checkPassword(password) }
     }
 
-    fun resendCode() = submit { telegram.resendCode() }
+    fun resendCode() = submit(onSuccess = { it.copy(resendCount = it.resendCount + 1) }) { telegram.resendCode() }
 
     fun editPhone() = local.update { it.copy(editingPhone = true, error = null) }
 
     fun clearError() = local.update { it.copy(error = null) }
 
-    fun retryStart() = telegram.start()
+    fun retryStart() = telegram.retry()
 
     private fun submit(onSuccess: (Local) -> Local = { it }, request: suspend () -> Unit) {
         if (local.value.isSubmitting) return
         local.update { it.copy(isSubmitting = true, error = null) }
         viewModelScope.launch {
             try {
-                request()
+                // Без сети TDLib держит запрос бесконечно, поэтому ограничиваем ожидание.
+                withTimeout(REQUEST_TIMEOUT_MS) { request() }
                 local.update { onSuccess(it).copy(isSubmitting = false) }
+            } catch (e: TimeoutCancellationException) {
+                local.update { it.copy(isSubmitting = false, error = e.toUserMessage()) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -102,6 +111,8 @@ class AuthViewModel(private val telegram: TelegramClient) : ViewModel() {
     }
 
     companion object {
+        private const val REQUEST_TIMEOUT_MS = 30_000L
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 AuthViewModel((this[APPLICATION_KEY] as TgmusApp).telegram)

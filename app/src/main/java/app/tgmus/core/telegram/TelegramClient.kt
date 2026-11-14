@@ -53,8 +53,16 @@ class TelegramClient(context: Context) {
             return
         }
         synchronized(lock) {
-            if (client == null) client = createClient()
+            if (client == null) client = createClientOrFail()
         }
+    }
+
+    /** Повторяет запуск после ошибки ([AuthState.Failed]). */
+    fun retry() {
+        if (_authState.value !is AuthState.Failed) return
+        _authState.value = AuthState.Loading
+        val current = synchronized(lock) { client }
+        if (current == null) start() else sendParameters()
     }
 
     /** Отправляет запрос и ждёт ответ. Ошибка Telegram приходит как [TelegramException]. */
@@ -98,6 +106,15 @@ class TelegramClient(context: Context) {
 
     suspend fun logOut() {
         send(TdApi.LogOut())
+    }
+
+    /** Создаёт клиент. Если TDLib не загрузился (например, нет библиотеки под процессор), не роняет приложение. */
+    private fun createClientOrFail(): Client? = try {
+        createClient()
+    } catch (t: Throwable) {
+        Log.e(TAG, "Cannot create TDLib client", t)
+        _authState.value = AuthState.Failed("Не удалось загрузить библиотеку Telegram на этом устройстве.")
+        null
     }
 
     private fun createClient(): Client {
@@ -160,7 +177,7 @@ class TelegramClient(context: Context) {
     private fun restart() {
         _authState.value = AuthState.Loading
         synchronized(lock) {
-            client = createClient()
+            client = createClientOrFail()
         }
     }
 

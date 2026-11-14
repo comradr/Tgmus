@@ -96,9 +96,10 @@ fun AuthScreen(viewModel: AuthViewModel = viewModel(factory = AuthViewModel.Fact
                             CodeDelivery.TelegramApp -> "Код пришёл в Telegram на другом устройстве, в чат «Telegram»."
                             CodeDelivery.Sms -> "Код отправлен по SMS на +${step.phone.trimStart('+')}."
                             CodeDelivery.Call -> "Тебе позвонят на +${step.phone.trimStart('+')} и продиктуют код."
-                            CodeDelivery.Other -> "Код отправлен на +${step.phone.trimStart('+')}."
+                            CodeDelivery.Other -> "Telegram отправил код для номера +${step.phone.trimStart('+')}."
                         },
                         resendTimeoutSec = step.resendTimeoutSec,
+                        resendCount = state.resendCount,
                         isSubmitting = state.isSubmitting,
                         error = state.error,
                         onChange = viewModel::clearError,
@@ -111,6 +112,7 @@ fun AuthScreen(viewModel: AuthViewModel = viewModel(factory = AuthViewModel.Fact
                         title = "Код из письма",
                         text = "Telegram отправил код на почту ${step.emailPattern}.",
                         resendTimeoutSec = null,
+                        resendCount = 0,
                         isSubmitting = state.isSubmitting,
                         error = state.error,
                         onChange = viewModel::clearError,
@@ -138,6 +140,8 @@ fun AuthScreen(viewModel: AuthViewModel = viewModel(factory = AuthViewModel.Fact
                     is AuthState.Failed -> MessageStep(
                         title = "Telegram не запустился",
                         text = step.message,
+                        actionLabel = "Повторить",
+                        onAction = viewModel::retryStart,
                     )
                 }
             }
@@ -225,6 +229,7 @@ private fun CodeStep(
     title: String,
     text: String,
     resendTimeoutSec: Int?,
+    resendCount: Int,
     isSubmitting: Boolean,
     error: String?,
     onChange: () -> Unit,
@@ -249,15 +254,17 @@ private fun CodeStep(
     SubmitButton("Продолжить", isSubmitting) { onSubmit(code) }
     Spacer(Modifier.height(4.dp))
     if (resendTimeoutSec != null) {
-        ResendButton(resendTimeoutSec, enabled = !isSubmitting, onResend = onResend)
+        ResendButton(resendTimeoutSec, resendCount, enabled = !isSubmitting, onResend = onResend)
     }
     TextButton(onClick = onBack, enabled = !isSubmitting) { Text("Изменить номер") }
 }
 
 @Composable
-private fun ResendButton(timeoutSec: Int, enabled: Boolean, onResend: () -> Unit) {
-    var secondsLeft by remember(timeoutSec) { mutableIntStateOf(timeoutSec.coerceAtLeast(0)) }
-    LaunchedEffect(timeoutSec) {
+private fun ResendButton(timeoutSec: Int, resendCount: Int, enabled: Boolean, onResend: () -> Unit) {
+    var secondsLeft by rememberSaveable(timeoutSec, resendCount) {
+        mutableIntStateOf(timeoutSec.coerceAtLeast(0))
+    }
+    LaunchedEffect(timeoutSec, resendCount) {
         while (secondsLeft > 0) {
             delay(1_000)
             secondsLeft--
@@ -317,7 +324,10 @@ private fun AuthField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    // Возвращаем фокус и клавиатуру после ошибки, когда поле снова становится активным.
+    LaunchedEffect(enabled) {
+        if (enabled) runCatching { focusRequester.requestFocus() }
+    }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,

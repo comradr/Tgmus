@@ -1,5 +1,6 @@
 package app.tgmus.feature.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -33,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -50,6 +52,9 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(factory = HomeViewModel.Fact
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var showAccount by rememberSaveable { mutableStateOf(false) }
+
+    // «Назад» с других вкладок возвращает на главную, а не закрывает приложение.
+    BackHandler(enabled = tab != Tab.Home) { tab = Tab.Home }
 
     Scaffold(
         bottomBar = {
@@ -83,7 +88,13 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel(factory = HomeViewModel.Fact
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
-                Avatar(name = state.userName, onClick = { showAccount = true })
+                Avatar(
+                    name = state.userName,
+                    onClick = {
+                        viewModel.reloadUserIfNeeded()
+                        showAccount = true
+                    },
+                )
             }
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
@@ -138,7 +149,7 @@ private fun Avatar(name: String, onClick: () -> Unit) {
             .size(40.dp)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.primary)
-            .clickable(onClickLabel = "Аккаунт", onClick = onClick),
+            .clickable(onClickLabel = "Аккаунт", role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(

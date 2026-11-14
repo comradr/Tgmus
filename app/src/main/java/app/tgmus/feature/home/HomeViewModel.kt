@@ -14,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -32,7 +33,7 @@ class HomeViewModel(private val telegram: TelegramClient) : ViewModel() {
     init {
         // Модель живёт дольше экрана, поэтому после выхода и нового входа данные загружаются заново.
         viewModelScope.launch {
-            telegram.authState.collect { auth ->
+            telegram.authState.collectLatest { auth ->
                 if (auth == AuthState.Ready) loadUser() else _state.value = HomeUiState()
             }
         }
@@ -43,6 +44,7 @@ class HomeViewModel(private val telegram: TelegramClient) : ViewModel() {
             val me = telegram.getMe()
             _state.update {
                 it.copy(
+                    error = null,
                     userName = listOf(me.firstName, me.lastName)
                         .filter { part -> !part.isNullOrBlank() }
                         .joinToString(" "),
@@ -54,6 +56,12 @@ class HomeViewModel(private val telegram: TelegramClient) : ViewModel() {
         } catch (e: Exception) {
             _state.update { it.copy(error = e.toUserMessage()) }
         }
+    }
+
+    /** Повторяет загрузку профиля, если в прошлый раз она не удалась. */
+    fun reloadUserIfNeeded() {
+        if (_state.value.userName.isNotBlank()) return
+        viewModelScope.launch { loadUser() }
     }
 
     fun logOut() {

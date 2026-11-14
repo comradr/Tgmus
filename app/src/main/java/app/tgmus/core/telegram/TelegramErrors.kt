@@ -2,6 +2,9 @@ package app.tgmus.core.telegram
 
 /** Переводит ошибку Telegram в понятный текст для пользователя. */
 fun Throwable.toUserMessage(): String {
+    if (this is kotlinx.coroutines.TimeoutCancellationException) {
+        return "Нет связи с Telegram. Проверь интернет и попробуй ещё раз."
+    }
     val error = this as? TelegramException
         ?: return "Что-то пошло не так. Проверь интернет и попробуй ещё раз."
     val raw = error.rawMessage

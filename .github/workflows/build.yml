@@ -30,7 +30,12 @@ jobs:
       - name: Restore signing key
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::KEYSTORE_B64 задан, а KEYSTORE_PASSWORD нет. Добавь пароль в секреты."
+            exit 1
+          fi
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > release.jks
             echo "Signing key restored"
@@ -72,4 +77,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v0.1.${GITHUB_RUN_NUMBER}"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$TAG" out/*.apk --title "Tgmus 0.1.${GITHUB_RUN_NUMBER}" --notes "Сборка из коммита ${GITHUB_SHA::7}" --latest
