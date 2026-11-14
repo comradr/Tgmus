@@ -16,9 +16,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -48,13 +48,13 @@ jobs:
           if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; then
             echo "::warning::TG_API_ID / TG_API_HASH не заданы: приложение соберётся, но войти в Telegram будет нельзя"
           fi
-          gradle :app:assembleRelease --stacktrace 2>&1 | tee build.log
+          gradle :app:assembleRelease 2>&1 | tee build.log
 
       - name: Report build errors
         if: failure()
         run: |
           [ -f build.log ] || exit 0
-          MSG=$(grep -E "^e: |^w: .*error|error:|What went wrong|Could not|FAILED|Unresolved|Exception" -A2 build.log | head -80 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          MSG=$(grep -E "^e: |error:|Error:|What went wrong|Could not|FAILED|Unresolved" -A4 build.log | grep -v "^\s*at " | head -80 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::error title=Gradle build failed::$MSG"
 
       - name: Rename APK

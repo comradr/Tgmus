@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.tgmus.TgmusApp
+import app.tgmus.core.telegram.AuthState
 import app.tgmus.core.telegram.TelegramClient
 import app.tgmus.core.telegram.toUserMessage
 import kotlinx.coroutines.CancellationException
@@ -29,22 +30,29 @@ class HomeViewModel(private val telegram: TelegramClient) : ViewModel() {
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
 
     init {
+        // Модель живёт дольше экрана, поэтому после выхода и нового входа данные загружаются заново.
         viewModelScope.launch {
-            try {
-                val me = telegram.getMe()
-                _state.update {
-                    it.copy(
-                        userName = listOf(me.firstName, me.lastName)
-                            .filter { part -> !part.isNullOrBlank() }
-                            .joinToString(" "),
-                        userPhone = me.phoneNumber.orEmpty(),
-                    )
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _state.update { it.copy(error = e.toUserMessage()) }
+            telegram.authState.collect { auth ->
+                if (auth == AuthState.Ready) loadUser() else _state.value = HomeUiState()
             }
+        }
+    }
+
+    private suspend fun loadUser() {
+        try {
+            val me = telegram.getMe()
+            _state.update {
+                it.copy(
+                    userName = listOf(me.firstName, me.lastName)
+                        .filter { part -> !part.isNullOrBlank() }
+                        .joinToString(" "),
+                    userPhone = me.phoneNumber.orEmpty(),
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _state.update { it.copy(error = e.toUserMessage()) }
         }
     }
 
